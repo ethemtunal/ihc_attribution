@@ -1,0 +1,29 @@
+.ipynb_checkpoints/
+node_modules/
+
+.streamlit
+.streamlit/*
+
+*.pyc
+__pycache__
+
+# VSCODE
+.vscode
+
+# PyCharm
+.idea
+.idea/*
+
+# Mac/OSX
+.DS_Store
+
+# Windows
+Thumbs.db
+
+**SPEC.md*
+TAGS
+
+# Ignore dotenv files
+.env
+.env.*
+!.env.example
