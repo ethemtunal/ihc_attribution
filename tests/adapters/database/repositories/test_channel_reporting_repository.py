@@ -9,7 +9,6 @@ from common.datagen.conversion_factory import ConversionFactory
 from common.datagen.session_cost_factory import SessionCostFactory
 from common.datagen.session_source_factory import SessionSourceFactory
 
-
 # ---------- recompute ----------
 
 
@@ -265,8 +264,7 @@ def test_recompute_wipes_stale_rows_not_present_in_source(ihc_db):
     DBChannelReportingRepo(ihc_db).recompute()
 
     assert (
-        ihc_db.query(ChannelReporting).filter_by(channel_name="OldChannel").count()
-        == 0
+        ihc_db.query(ChannelReporting).filter_by(channel_name="OldChannel").count() == 0
     )
 
 
