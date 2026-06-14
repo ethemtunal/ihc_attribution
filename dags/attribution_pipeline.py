@@ -56,7 +56,13 @@ def ihc_attribution_pipeline() -> None:
             api_key=_required_env("IHC_API_KEY"),
             conv_type_id=_required_env("IHC_CONV_TYPE_ID"),
         )
-        result = attribute_journeys(client, Path(journeys_path), _run_dir(context))
+        is_test = os.environ.get("IHC_TEST_MODE", "").lower() in ("1", "true", "yes")
+        result = attribute_journeys(
+            client,
+            Path(journeys_path),
+            _run_dir(context),
+            is_test=is_test,
+        )
         return {
             "success_path": str(result.success_path),
             "failed_path": str(result.failed_path),

@@ -10,15 +10,17 @@ from domain.entities.attribution_run_result import AttributionRunResult
 from domain.entities.customer_journey import CustomerJourneyEntity
 
 MAX_JOURNEYS_PER_CHUNK = 100
-MAX_SESSIONS_PER_CHUNK = 3000
+MAX_SESSIONS_PER_CHUNK_PROD = 3000
+MAX_SESSIONS_PER_CHUNK_TEST = 200
 
 
 def attribute_journeys(
     client: IhcClient,
     journeys_path: Path,
     output_dir: Path,
+    is_test: bool = False,
     max_journeys_per_chunk: int = MAX_JOURNEYS_PER_CHUNK,
-    max_sessions_per_chunk: int = MAX_SESSIONS_PER_CHUNK,
+    max_sessions_per_chunk: int | None = None,
 ) -> AttributionRunResult:
     """Stream-read journeys, chunk under IHC limits, POST each chunk.
 
@@ -27,7 +29,14 @@ def attribute_journeys(
     attribution_failed.jsonl. Both files are written via `.tmp + replace`
     so a successful run leaves only the final files; a crash leaves no
     partial output downstream consumers might pick up.
+
+    `is_test=True` lowers the session cap to 200 (IHC free-tier limit).
+    `max_sessions_per_chunk` overrides the test/prod default when set.
     """
+    if max_sessions_per_chunk is None:
+        max_sessions_per_chunk = (
+            MAX_SESSIONS_PER_CHUNK_TEST if is_test else MAX_SESSIONS_PER_CHUNK_PROD
+        )
     output_dir.mkdir(parents=True, exist_ok=True)
     success_final = output_dir / "attribution_success.jsonl"
     failed_final = output_dir / "attribution_failed.jsonl"

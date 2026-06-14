@@ -14,7 +14,11 @@ from domain.entities.attribution_customer_journey import (
 from domain.entities.attribution_failure import AttributionFailureEntity
 from domain.entities.customer_journey import CustomerJourneyEntity
 from domain.entities.journey_touchpoint import JourneyTouchpointEntity
-from services.attribution_service import attribute_journeys
+from services.attribution_service import (
+    MAX_SESSIONS_PER_CHUNK_PROD,
+    MAX_SESSIONS_PER_CHUNK_TEST,
+    attribute_journeys,
+)
 
 
 def _touchpoint(session_id: str = "s1") -> JourneyTouchpointEntity:
@@ -286,6 +290,79 @@ def test_uses_atomic_rename_leaves_no_tmp_files(tmp_path):
     assert not (tmp_path / "attribution_failed.jsonl.tmp").exists()
     assert (tmp_path / "attribution_success.jsonl").exists()
     assert (tmp_path / "attribution_failed.jsonl").exists()
+
+
+def test_is_test_flag_caps_session_chunks_at_free_tier_limit(tmp_path):
+    """
+    GIVEN three journeys each with 100 sessions
+    WHEN attribute_journeys runs with is_test=True
+    THEN chunks are capped at 200 sessions (IHC free tier), so the three
+         journeys split into two chunks (2 journeys = 200 sessions, then 1).
+    """
+    journeys_path = tmp_path / "journeys.jsonl"
+    journeys = [_journey(f"c{i}", n_sessions=100) for i in range(3)]
+    _write_journeys(journeys_path, journeys)
+    client = MagicMock(spec=["compute"])
+    client.compute.return_value = _ok_response()
+
+    attribute_journeys(client, journeys_path, tmp_path, is_test=True)
+
+    sizes = [
+        sum(len(j.sessions) for j in call.args[0])
+        for call in client.compute.call_args_list
+    ]
+    assert sizes == [200, 100]
+
+
+def test_default_uses_prod_session_cap(tmp_path):
+    """
+    GIVEN four journeys each with 1000 sessions (4000 total)
+    WHEN attribute_journeys runs with default is_test=False
+    THEN chunks are capped at 3000 sessions (IHC public docs default).
+    """
+    journeys_path = tmp_path / "journeys.jsonl"
+    _write_journeys(
+        journeys_path, [_journey(f"c{i}", n_sessions=1000) for i in range(4)]
+    )
+    client = MagicMock(spec=["compute"])
+    client.compute.return_value = _ok_response()
+
+    attribute_journeys(client, journeys_path, tmp_path)
+
+    sizes = [
+        sum(len(j.sessions) for j in call.args[0])
+        for call in client.compute.call_args_list
+    ]
+    assert max(sizes) <= MAX_SESSIONS_PER_CHUNK_PROD
+    assert MAX_SESSIONS_PER_CHUNK_PROD == 3000
+    assert MAX_SESSIONS_PER_CHUNK_TEST == 200
+
+
+def test_explicit_max_sessions_overrides_is_test(tmp_path):
+    """
+    GIVEN is_test=True (which would normally cap at 200)
+    AND an explicit max_sessions_per_chunk=50
+    WHEN attribute_journeys runs
+    THEN the explicit value wins.
+    """
+    journeys_path = tmp_path / "journeys.jsonl"
+    _write_journeys(journeys_path, [_journey(f"c{i}", n_sessions=40) for i in range(5)])
+    client = MagicMock(spec=["compute"])
+    client.compute.return_value = _ok_response()
+
+    attribute_journeys(
+        client,
+        journeys_path,
+        tmp_path,
+        is_test=True,
+        max_sessions_per_chunk=50,
+    )
+
+    sizes = [
+        sum(len(j.sessions) for j in call.args[0])
+        for call in client.compute.call_args_list
+    ]
+    assert max(sizes) <= 50
 
 
 def test_creates_output_dir_when_it_does_not_exist(tmp_path):
