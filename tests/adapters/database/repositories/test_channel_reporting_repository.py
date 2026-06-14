@@ -268,22 +268,22 @@ def test_recompute_wipes_stale_rows_not_present_in_source(ihc_db):
     )
 
 
-# ---------- get_all ----------
+# ---------- get_for_export ----------
 
 
-def test_get_all_returns_empty_when_no_rows(ihc_db):
+def test_get_for_export_returns_empty_when_no_rows(ihc_db):
     """
     GIVEN an empty channel_reporting table
-    WHEN get_all is called
+    WHEN get_for_export is called
     THEN it returns an empty list.
     """
-    assert DBChannelReportingRepo(ihc_db).get_all() == []
+    assert DBChannelReportingRepo(ihc_db).get_for_export() == []
 
 
-def test_get_all_returns_rows_ordered_by_date_then_channel(ihc_db):
+def test_get_for_export_returns_rows_ordered_by_date_then_channel(ihc_db):
     """
     GIVEN rows on multiple (channel, date) pairs
-    WHEN get_all is called with no filter
+    WHEN get_for_export is called with no filter
     THEN rows are returned ordered by (date, channel_name) ascending.
     """
     for sid, channel, date in [
@@ -302,7 +302,7 @@ def test_get_all_returns_rows_ordered_by_date_then_channel(ihc_db):
     repo = DBChannelReportingRepo(ihc_db)
     repo.recompute()
 
-    result = repo.get_all()
+    result = repo.get_for_export()
 
     assert [(r.date, r.channel_name) for r in result] == [
         ("2024-01-01", "SEA"),
@@ -311,10 +311,10 @@ def test_get_all_returns_rows_ordered_by_date_then_channel(ihc_db):
     ]
 
 
-def test_get_all_filters_by_inclusive_date_range(ihc_db):
+def test_get_for_export_filters_by_inclusive_date_range(ihc_db):
     """
     GIVEN rows on 2024-01-01, 2024-01-15, and 2024-02-01
-    WHEN get_all is called with start='2024-01-10' and end='2024-01-31'
+    WHEN get_for_export is called with start='2024-01-10' and end='2024-01-31'
     THEN only the 2024-01-15 row is returned.
     """
     for sid, date in [
@@ -333,6 +333,76 @@ def test_get_all_filters_by_inclusive_date_range(ihc_db):
     repo = DBChannelReportingRepo(ihc_db)
     repo.recompute()
 
-    result = repo.get_all("2024-01-10", "2024-01-31")
+    result = repo.get_for_export("2024-01-10", "2024-01-31")
 
     assert [r.date for r in result] == ["2024-01-15"]
+
+
+def test_get_for_export_computes_cpo_and_roas_in_sql(ihc_db):
+    """
+    GIVEN a row with cost=50, ihc=2.5, ihc_revenue=500
+    WHEN get_for_export is called
+    THEN cpo = 20.0 (cost/ihc) and roas = 10.0 (ihc_revenue/cost), computed in SQL.
+    """
+    ihc_db.add(
+        ChannelReporting(
+            channel_name="SEA",
+            date="2024-01-01",
+            cost=50.0,
+            ihc=2.5,
+            ihc_revenue=500.0,
+        )
+    )
+    ihc_db.commit()
+
+    result = DBChannelReportingRepo(ihc_db).get_for_export()
+
+    assert len(result) == 1
+    assert result[0].cpo == 20.0
+    assert result[0].roas == 10.0
+
+
+def test_get_for_export_returns_null_cpo_when_ihc_is_zero(ihc_db):
+    """
+    GIVEN a row with ihc=0 (e.g. cost spent but no attributed conversions)
+    WHEN get_for_export is called
+    THEN cpo is None (SQL CASE returns NULL); roas is still computed.
+    """
+    ihc_db.add(
+        ChannelReporting(
+            channel_name="Display",
+            date="2024-01-01",
+            cost=100.0,
+            ihc=0.0,
+            ihc_revenue=0.0,
+        )
+    )
+    ihc_db.commit()
+
+    result = DBChannelReportingRepo(ihc_db).get_for_export()
+
+    assert result[0].cpo is None
+    assert result[0].roas == 0.0
+
+
+def test_get_for_export_returns_null_roas_when_cost_is_zero(ihc_db):
+    """
+    GIVEN a row with cost=0 (organic / direct)
+    WHEN get_for_export is called
+    THEN roas is None; cpo is still computed (0).
+    """
+    ihc_db.add(
+        ChannelReporting(
+            channel_name="Organic",
+            date="2024-01-01",
+            cost=0.0,
+            ihc=2.0,
+            ihc_revenue=200.0,
+        )
+    )
+    ihc_db.commit()
+
+    result = DBChannelReportingRepo(ihc_db).get_for_export()
+
+    assert result[0].roas is None
+    assert result[0].cpo == 0.0

@@ -1,8 +1,7 @@
 from sqlalchemy import text
 
-from adapters.database.models.channel_reporting import ChannelReporting
 from adapters.database.repositories.base_repository import BaseRepo
-from domain.entities.channel_reporting import ChannelReportingEntity
+from domain.entities.channel_reporting_export_row import ChannelReportingExportRow
 
 _DELETE_SQL = "DELETE FROM channel_reporting"
 
@@ -40,6 +39,21 @@ LEFT JOIN ihc_per_pair ip
       AND ip.date         = cp.date
 """
 
+_EXPORT_SQL = """
+SELECT
+    channel_name,
+    date,
+    cost,
+    ihc,
+    ihc_revenue,
+    CASE WHEN ihc  != 0 THEN cost        / ihc  ELSE NULL END AS cpo,
+    CASE WHEN cost != 0 THEN ihc_revenue / cost ELSE NULL END AS roas
+FROM channel_reporting
+WHERE (:start IS NULL OR date >= :start)
+  AND (:end   IS NULL OR date <= :end)
+ORDER BY date, channel_name
+"""
+
 
 class DBChannelReportingRepo(BaseRepo):
     def recompute(self) -> None:
@@ -55,18 +69,19 @@ class DBChannelReportingRepo(BaseRepo):
         self.session.execute(text(_INSERT_SQL))
         self.session.commit()
 
-    def get_all(
+    def get_for_export(
         self,
         start_date: str | None = None,
         end_date: str | None = None,
-    ) -> list[ChannelReportingEntity]:
-        """Return channel_reporting rows, optionally filtered by inclusive date range."""
-        query = self.session.query(ChannelReporting)
-        if start_date is not None:
-            query = query.filter(ChannelReporting.date >= start_date)
-        if end_date is not None:
-            query = query.filter(ChannelReporting.date <= end_date)
-        rows = query.order_by(
-            ChannelReporting.date, ChannelReporting.channel_name
+    ) -> list[ChannelReportingExportRow]:
+        """Read channel_reporting with CPO + ROAS computed in SQL.
+
+        CPO = cost / ihc, NULL when ihc = 0.
+        ROAS = ihc_revenue / cost, NULL when cost = 0.
+        Optionally filtered by inclusive date range.
+        """
+        rows = self.session.execute(
+            text(_EXPORT_SQL),
+            {"start": start_date, "end": end_date},
         ).all()
-        return [row.to_entity() for row in rows]
+        return [ChannelReportingExportRow.model_validate(r._mapping) for r in rows]
