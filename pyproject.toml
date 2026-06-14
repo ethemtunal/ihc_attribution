@@ -5,10 +5,34 @@ description = "Add your description here"
 requires-python = ">=3.13"
 dependencies = [
     "apache-airflow>=3.2.2",
+    "pydantic>=2.13.4",
+    "requests>=2.34.2",
+    "sqlalchemy>=2.0.50",
 ]
 
 [dependency-groups]
 dev = [
+    "factory-boy>=3.3.3",
     "mypy>=2.1.0",
+    "pytest>=9.0.3",
     "ruff>=0.15.16",
+    "types-requests>=2.33.0.20260518",
 ]
+
+[tool.pyright]
+pythonVersion = "3.13"
+venvPath = "."
+venv = ".venv"
+extraPaths = ["."]
+
+[tool.mypy]
+python_version = "3.13"
+strict = true
+
+[[tool.mypy.overrides]]
+module = ["factory.*", "tests.*", "common.datagen.*", "dags.*"]
+ignore_errors = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
